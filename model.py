@@ -119,7 +119,7 @@ class MultiHeadAttentionBlock(nn.Module):
         if dropout is not None:
             attention_scores = dropout(attention_scores)
 
-        return (attention_scores @ values) , attention_scores
+        return (attention_scores @ value) , attention_scores
 
     def forward(self , q , k , v , mask):
         # mask/masking = furture tokens should not affect the earlier tokens 
@@ -141,4 +141,14 @@ class MultiHeadAttentionBlock(nn.Module):
  
         # (Batch , seq_len , d_model) -> (Batch , seq_len , d_model)
         return self.w_o(x)
+
+
+class ResidualConnection(nn.Module):
+    def __init__(self , dropout : float) -> None:
+        super().__init__()
+        self.dropout = nn.Dropout(dropout)
+        self.norm = LayerNorm()
+
+    def forward(self, x , sublayer):
+        return x + self.dropout(sublayer(self.norm(x)))
 
