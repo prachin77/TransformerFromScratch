@@ -55,3 +55,30 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
+
+# layer norm = eg there are n batches and each batch have n items . 
+# we calculate mean & var of each item independently & then we calculate new
+# values for each of them using their own mean and var 
+
+# mean = M 
+# var = V
+# lets say there is 
+# item1_val -> Xi bar = Xi - Mi / root((Vi)^2 + epsilon)
+
+# we also introduce some params called gamma & beta 
+# gamma = multiplicative i.e. its multiplied by x
+# beta = additive i.e. its added by x
+class LayerNorm(nn.Module):
+    def __init__(self , eps : float = 10**-6) -> None:
+        super().__init__()
+        self.eps = eps
+        self.gamma = nn.parameter(torch.ones(1))
+        self.beta = nn.Parameter(torch.ones(1))
+
+    def forward(self , x):
+        mean = x.mean(dim = -1 , keepdim = True) # mean cancels the dim but we wanna keep it
+        std = x.std(dim = -1 , keepdim = True)
+
+        return self.gamma * (x - mean) / (std + self.eps) + self.beta
+
+
