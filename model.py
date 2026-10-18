@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-import torch.functional as F
+import torch.nn.functional as F
 import math 
 
 class InputEmbeddings(nn.Module):
@@ -295,4 +295,4 @@ def build_transformer(src_vocab_size : int , tgt_vocab_size : int , src_seq_len 
         if p.dim() > 1:
             nn.init.xavier_uniform(p)
 
-    return transformer
+    return transformer  
