@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.utils.data import Dataloader , Dataset , random_split
 from datasets import load_dataset
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
@@ -27,3 +28,20 @@ def get_or_build_tokenizer(config , ds , lang):
 
     return tokenizer
 
+def get_ds(config):
+    ds_raw = load_dataset(
+        "Helsinki-NLP/opus-100",
+        f'{config["lang_src"]}-{config["lang_tgt"]}',
+        split = "train"
+    )
+
+    # build tokenizers
+    tokenizer_src = get_or_build_tokenizer(config , ds_raw , config["lang_src"])
+    tokenizer_tgt = get_or_build_tokenizer(config , ds_raw , config["lang_tgt"])
+
+    # 90% for training & 10% for validation 
+    train_ds_size = int(0.9 * len(ds_raw))
+    val_ds_size = len(ds_raw) - train_ds_size
+    # random_split splits the dataset based on the size we give in input 
+    train_ds_raw , val_ds_raw = random_split(ds_raw , [train_ds_size , val_ds_size])
+    
