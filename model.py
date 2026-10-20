@@ -85,9 +85,9 @@ class LayerNorm(nn.Module):
 class FeedForwardBlock(nn.Module):
     def __init__(self , d_model : int , d_ff : int , dropout : float) -> None:
         super().__init__()
-        self.linear_1 = nn.Linear(d_model , d_ff) # W1 and B1
+        self.linear_1 = nn.Linear(d_model , d_ff) # W1 and b1
         self.dropout = nn.Dropout(dropout)
-        self.linear_2 = nn.Linear(d_model , d_ff) # W2 and B2
+        self.linear_2 = nn.Linear(d_ff , d_model) # W2 and b2
 
     def forward(self , x):
         # (Batch , seq_len , d_model) -> (Batch , seq_len , d_ff) -> (Batch , seq_len , d_model)
@@ -115,8 +115,9 @@ class MultiHeadAttentionBlock(nn.Module):
         # (Batch , h , seq_len , d_k) -> (Batch , h , seq_len , seq_len)
         attention_scores = (query @ key.transpose(-2 , -1)) / math.sqrt(d_k)
         if mask is not None:
-            attention_scores.masked_fill(mask == 0 , -1e9)
-        attention_scores = attention_scores.softmax(dim = 1) # (Batch , h , seq_len , seq_len)
+            # attention_scores.masked_fill(mask == 0 , -1e9)
+            attention_scores = attention_scores.masked_fill(mask == 0 , torch.finfo(attention_scores.dtype).min)
+        attention_scores = attention_scores.softmax(dim = -1) # (Batch , h , seq_len , seq_len)
         if dropout is not None:
             attention_scores = dropout(attention_scores)
 
@@ -213,10 +214,20 @@ class ProjectionLayer(nn.Module):
 
     def forward(self , x):
         # (Batch , seq_len , d_model) -> (Batch , seq_len , vocab_size)
-        return torch.log_softmax(self.proj(x) , dim = -1)
+        # return torch.log_softmax(self.proj(x) , dim = -1)
+        return self.proj(x) # as CrossEntropy expects raw logits
 
 class Transformer(nn.Module):
-    def __init__(self , encoder : Encoder , decoder : Decoder , src_embed : InputEmbeddings , tgt_embed : InputEmbeddings , src_pos : PositionalEncoding , tgt_pos : PositionalEncoding , projection_layer : ProjectionLayer) -> None:
+    def __init__(
+        self,
+        encoder: Encoder,
+        decoder: Decoder,
+        src_embed: InputEmbeddings,
+        tgt_embed: InputEmbeddings,
+        src_pos: PositionalEncoding,
+        tgt_pos: PositionalEncoding,
+        projection_layer: ProjectionLayer
+    ) -> None:
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder 
@@ -235,20 +246,25 @@ class Transformer(nn.Module):
         #   need to calculate it everytime . Also we prefer to keep output seperate for visualizing 
         #   the attention .
 
-        def encode(self, src , src_mask):
-            src = self.src_embed(src)
-            src = self.src_pos(src)
-            return self.encoder(src , src_mask)
+    def encode(self, src , src_mask):
+        src = self.src_embed(src)
+        src = self.src_pos(src)
+        return self.encoder(src , src_mask)
 
-        def decoder(self, encoder_output , src_mask , tgt , tgt_mask):
-            tgt = self.tgt_embed(tgt)
-            tgt = self.tgt_pos(tgt)
-            return self.decoder(tgt , encoder_output , src_mask , tgt_mask)
+    def decode(self, encoder_output , src_mask , tgt , tgt_mask):
+        tgt = self.tgt_embed(tgt)
+        tgt = self.tgt_pos(tgt)
+        return self.decoder(tgt , encoder_output , src_mask , tgt_mask)
 
-        def project(self, x):
-            return self.projection_layer(x)
+    def project(self, x):
+        return self.projection_layer(x)
 
-def build_transformer(src_vocab_size : int , tgt_vocab_size : int , src_seq_len : int , tgt_seq_len : int , d_model : int = 512 , N : int = 6 , h : int = 8 , dropout : float = 0.01 , d_ff : int = 2048) -> Transformer:
+def build_transformer(src_vocab_size : int , tgt_vocab_size : int , src_seq_len : int , tgt_seq_len : int , d_model : int = 128 , N : int = 3 , h : int = 4 , dropout : float = 0.01 , d_ff : int = 512) -> Transformer:
+    # originally
+    # d_model = 512 
+    # N = 6 
+    # h = 8
+    # d_ff = 512
     # vocab size 
     # seq_len of tgt and src can be same or different depending upon languages .
     # in our case of language translation it will be same 

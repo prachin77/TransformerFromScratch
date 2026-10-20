@@ -89,7 +89,8 @@ class BilingualDataset(Dataset):
             # why this mask ?
             # because we're increase the size of encoder input by adding PAD tokens ,
             # but we don't want these tokens to get involved in attention mechanism  
-            "encoder_mask" : (encoder_input != self.pad_token).unsqueeze(0).int(), # (1 , 1 , seq_len)
+            # "encoder_mask" : (encoder_input != self.pad_token).unsqueeze(0).int(), # (1 , 1 , seq_len)
+            "encoder_mask" : (encoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int(), # (1 , 1 , seq_len)
             # special tokens for decoder which is casual mask . which means that each word can only look at 
             # previous words and ignore PAD tokens
             "decoder_mask" : (decoder_input != self.pad_token).unsqueeze(0).int() & casual_mask(decoder_input.size(0)), # (1 , seq_len) & (1 , seq_len , seq_len)

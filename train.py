@@ -18,6 +18,11 @@ import warnings
 from tqdm import tqdm
 from pathlib import Path
 import os
+import sys
+
+# Fix Windows console encoding for non-Latin scripts (e.g. Hindi)
+sys.stdout.reconfigure(encoding='utf-8')
+sys.stderr.reconfigure(encoding='utf-8')
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -229,7 +234,14 @@ def train_model(config):
     # Tensorboard
     writer = SummaryWriter(config["experiment_name"])
 
-    optimizer = torch.optim.Adam(model.parameters() , lr = config["lr"] , eps=1e-9)
+    optimizer = torch.optim.Adam(
+        model.parameters() , 
+        lr = config["lr"] , 
+        eps=1e-9,
+        # disables Adam's multi-tensor implementation, which can use additional peak memory. 
+        # It may run a little slower, but that is a reasonable trade-off for your GPU.
+        foreach=False
+    )
 
 
     # this allows to restore the state of model and optimzer if in case model crashes in training
@@ -241,7 +253,7 @@ def train_model(config):
         print(f"Preloading model : {model_filename}")
         state = torch.load(model_filename)
         initial_epoch = state['epoch'] + 1
-        optimizer.load_state_dict(state['optimzer_state_dict'])
+        optimizer.load_state_dict(state["optimizer_state_dict"])
         global_step = state["global_step"]
 
     # we need to tell what index to ignore . we want it to
@@ -266,7 +278,7 @@ def train_model(config):
     #         c 0.05 0.05 0.95
     loss_fn = nn.CrossEntropyLoss(
         # ignore_index=tokenizer_tgt.token_to_id("[PAD]"),
-        ignore_index=tokenizer_src.token_to_id("[PAD]"),
+        ignore_index=tokenizer_tgt.token_to_id("[PAD]"),
         label_smoothing = 0.1 # takes 0.1% from the highest confident scores gives to others 
     ).to(device)
 
