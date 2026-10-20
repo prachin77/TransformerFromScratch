@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from model import build_transformer
 from torch.utils.data import Dataloader , Dataset , random_split
+from torch.utils.tensorboard import SummaryWriter
 from dataset import BilingualDataset , casual_mask
 from datasets import load_dataset
 from tokenizers import Tokenizer
@@ -100,3 +101,25 @@ def get_model(config , vocab_src_len , vocab_tgt_len):
     return model
 
 
+# ===== Training loop =======
+def train_model(config):
+    # define the device 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu") 
+    print(f"using device : {device}")
+
+    # making sure that models folder exists or not 
+    Path(config["model_folder"]).mkdir(parents=True , exist_ok=True)
+
+    # load the dataset
+    train_dataloader , val_dataloader , tokenizer_src , tokenizer_tgt = get_ds(config)
+    # get vocab size
+    model = get_model(config , tokenizer_src.get_vocab_size() , tokenizer_tgt.get_vocab_size()).to(device)
+
+    # Tensorboard
+    writer = SummaryWriter(config["experiment_name"])
+
+    optimizer = torch.optim.Adam(model.parameters() , lr = config["lr"] , eps=1e-9)
+
+
+
+    

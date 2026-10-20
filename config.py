@@ -14,7 +14,7 @@ def get_config():
         "model_basename" : "t_model",
         "preload" : None, # if we wanna restart the training after may be its crashed
         "tokenizer_file" : "tokenizer_{0}.json", # {0} for bcz it'll be saved for en and hi like tokenizer.en 
-        "experiment_name" : "runs/model" # saves losses
+        "experiment_name" : "runs/model" # Tensorboard = saves losses and will help to visualize it
     }
 
 def get_weights_file_path(config , epoch : str):
