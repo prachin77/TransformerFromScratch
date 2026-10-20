@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from model import build_transformer
 from torch.utils.data import Dataloader , Dataset , random_split
 from dataset import BilingualDataset , casual_mask
 from datasets import load_dataset
@@ -87,4 +88,15 @@ def get_ds(config):
     return train_dataloader , val_dataloader , tokenizer_src , tokenizer_tgt
 
 
-    
+def get_model(config , vocab_src_len , vocab_tgt_len):
+    model = build_transformer(
+        vocab_src_len,
+        vocab_tgt_len,
+        config["seq_len"], # src seq_len 
+        config["seq_len"], # tgt seq_len
+        config["d_model"]
+    )
+
+    return model
+
+
