@@ -18,7 +18,15 @@ import warnings
 from tqdm import tqdm
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 
+load_dotenv()
+
+hf_token = os.getenv("HF_TOKEN")
+# if hf_token:
+#     login(token=hf_token, add_to_git_credential=False)
+# else:
+#     print("HF_TOKEN not found; using unauthenticated Hugging Face access.")
 
 def greedy_decode(model , source , source_mask , tokenizer_src , tokenizer_tgt , max_len , device):
     # when we wanna inference the model we only calculate encoder output only once 
@@ -136,7 +144,9 @@ def get_ds(config):
     ds_raw = load_dataset(
         "Helsinki-NLP/opus-100",
         f'{config["lang_src"]}-{config["lang_tgt"]}',
-        split = "train"
+        # split = "train" # keep this if you have compute and resources
+        split = "test",
+        token = hf_token
     )
 
     # build tokenizers
@@ -264,12 +274,10 @@ def train_model(config):
         # usually validation is ran after every few steps
         # but here i wanna see it at every iteration
 
-        # model.train()
+        model.train()
 
         batch_iterator = tqdm(train_dataloader , desc = f"Processing epoch {epoch:02d}")
         for batch in batch_iterator:
-            model.train()
-
             # get the tensors
             encoder_input = batch["encoder_input"].to(device) # (B , seq_len)
             decoder_input = batch["decoder_input"].to(device) # (B , seq_len)
@@ -303,9 +311,9 @@ def train_model(config):
             optimizer.step()
             optimizer.zero_grad()
 
-            run_validation(model , val_dataloader , tokenizer_src , tokenizer_tgt , config["seq_len"] , device , lambda msg : batch_iterator.write(msg) , global_step , writer)
-
             global_step += 1
+
+        run_validation(model , val_dataloader , tokenizer_src , tokenizer_tgt , config["seq_len"] , device , lambda msg : batch_iterator.write(msg) , global_step , writer)
 
         # save the model and the end of every epoch 
         model_filename = get_weights_file_path(config , f"{epoch:02d}")

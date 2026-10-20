@@ -65,7 +65,7 @@ class BilingualDataset(Dataset):
         decoder_input = torch.cat(
             [
                 self.sos_token,
-                torch.tensor(enc_input_tokens , dtype=torch.int64),
+                torch.tensor(dec_input_tokens , dtype=torch.int64),
                 torch.tensor([self.pad_token] * dec_num_padding_tokens , dtype=torch.int64)
             ]
         )

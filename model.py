@@ -72,12 +72,13 @@ class LayerNorm(nn.Module):
     def __init__(self , eps : float = 10**-6) -> None:
         super().__init__()
         self.eps = eps
-        self.gamma = nn.parameter(torch.ones(1))
+        self.gamma = nn.Parameter(torch.ones(1))
         self.beta = nn.Parameter(torch.ones(1))
 
     def forward(self , x):
         mean = x.mean(dim = -1 , keepdim = True) # mean cancels the dim but we wanna keep it
         std = x.std(dim = -1 , keepdim = True)
+        # std = x.std(dim = -1 , keepdim = True , unbiased = False)
 
         return self.gamma * (x - mean) / (std + self.eps) + self.beta   
 
@@ -167,7 +168,7 @@ class EncoderBlock(nn.Module):
         return x
 
 class Encoder(nn.Module):
-    def __init(self , layers : nn.ModuleList) -> None:   
+    def __init__(self , layers : nn.ModuleList) -> None:   
         super().__init__()
         self.layers = layers 
         self.norm = LayerNorm()
@@ -207,7 +208,7 @@ class Decoder(nn.Module):
 
 class ProjectionLayer(nn.Module):
     def __init__(self , d_model : int , vocab_size : int) -> None:
-        super().__init()
+        super().__init__()
         self.proj = nn.Linear(d_model , vocab_size)
 
     def forward(self , x):
@@ -269,7 +270,7 @@ def build_transformer(src_vocab_size : int , tgt_vocab_size : int , src_seq_len 
         encoder_self_attention_block = MultiHeadAttentionBlock(d_model , h , dropout)
         feed_forward_block = FeedForwardBlock(d_model , d_ff , dropout)
         encoder_block = EncoderBlock(encoder_self_attention_block , feed_forward_block , dropout)
-        encoder_block.append(encoder_block)
+        encoder_blocks.append(encoder_block)
 
     # create decoder blocks 
     decoder_blocks = []
@@ -293,6 +294,6 @@ def build_transformer(src_vocab_size : int , tgt_vocab_size : int , src_seq_len 
     # initialize the parameters 
     for p in transformer.parameters():
         if p.dim() > 1:
-            nn.init.xavier_uniform(p)
+            nn.init.xavier_uniform_(p)
 
     return transformer  
