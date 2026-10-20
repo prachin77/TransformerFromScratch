@@ -20,9 +20,9 @@ class BilingualDataset(Dataset):
 
         # converting these 3 tokens into input id i.e a number
 
-        self.sos_token = torch.Tensor([tokenizer_src.token_to_id(["[SOS]"])] , dtype = torch.int64)
-        self.eos_token = torch.Tensor([tokenizer_src.token_to_id(["[EOS]"])] , dtype = torch.int64)
-        self.pad_token = torch.Tensor([tokenizer_src.token_to_id(["[PAD]"])] , dtype = torch.int64)
+        self.sos_token = torch.tensor([tokenizer_src.token_to_id("[SOS]")], dtype=torch.int64)
+        self.eos_token = torch.tensor([tokenizer_src.token_to_id("[EOS]")], dtype=torch.int64)
+        self.pad_token = torch.tensor([tokenizer_src.token_to_id("[PAD]")], dtype=torch.int64)
 
     def __len__(self):
         # gives the length of the ds itself
@@ -101,7 +101,6 @@ class BilingualDataset(Dataset):
 def casual_mask(size):
     mask = torch.triu(torch.ones(1 , size , size), diagonal=1).type(torch.int64)
     return mask == 0
-
 
 
 

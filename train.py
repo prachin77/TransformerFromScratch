@@ -14,21 +14,114 @@ from tokenizers.models import WordLevel
 from tokenizers.trainers import WordLevelTrainer
 from tokenizers.pre_tokenizers import Whitespace
 
+import warnings
 from tqdm import tqdm
 from pathlib import Path
 import os
 
 
+def greedy_decode(model , source , source_mask , tokenizer_src , tokenizer_tgt , max_len , device):
+    # when we wanna inference the model we only calculate encoder output only once 
+    # and reuse it for every token that model will output from decoder 
+    sos_idx = tokenizer_tgt.token_to_id("[SOS]")
+    eos_idx = tokenizer_tgt.token_to_id("[EOS]")
+
+    encoder_output = model.encode(source , source_mask)
+
+    # how we do inferncing ?
+    # first we give decoder SOS token so that it can output first token of the translated sentence .
+    # then at every iteration we add previous token to the decoder input so that decoder can output
+    # the next token . 
+
+    # initialize decoder input with sos token 
+    decoder_input = torch.empty(1,1).fill_(sos_idx).type_as(source).to(device)
+    while True:
+        if decoder_input.size(1) == max_len:
+            break
+
+        # build mask for the target (decoder input)
+        # we don't want the input to watch future words
+        decoder_mask = casual_mask(decoder_input.size(1)).type_as(source).to(device)
+
+        # calculate output of the decoder 
+        # reuse output of the encoder for every iteration
+        out = model.decode(encoder_output , source_mask , decoder_input , decoder_mask)
+
+        # get the next token
+        prob = model.project(out[: , -1])
+        # select the token with max prob 
+        _ , next_word = torch.max(prob , dim = 1)
+        decoder_input = torch.cat([decoder_input , torch.empty(1,1).type_as(source).fill_(next_word.item()).to(device)] , dim = 1)
+
+        if next_word == eos_idx:
+            break
+
+    # we squeeze it to remove the batch dim 
+    return decoder_input.squeeze(0)
+
+
+def run_validation(model , validation_ds , tokenizer_src , tokenizer_tgt , max_len , device , print_msg , global_state , writer , num_examples = 2):
+    # num_examples = 2 -> means that we'll testcase on 2 sentences and see how they got translated
+    # to visualize output of the model while we're training.
+    # just to see how our model is evolving while its training.
+    # it'll also allow to inference the model and lets us see how they got translated
+
+    model.eval()
+    count = 0
+
+    # source_texts = []
+    # expected = []
+    # predicted = []
+
+    # size of the control window (just use the default value)
+    console_width = 80
+
+    with torch.no_grad(): 
+        # disables gradient calculation during inferencing , 
+        # it is enable only during training as we want the model to learn and calculate steepest descent
+
+        for batch in validation_ds:
+            count += 1
+            encoder_input = batch["encoder_input"].to(device) 
+            encoder_mask = batch["encoder_mask"].to(device)
+
+            assert encoder_input.size(0) == 1 , "Batch size must be 1 for validation"
+
+            model_out = greedy_decode(model , encoder_input , encoder_mask , tokenizer_src , tokenizer_tgt , max_len , device)
+
+            source_text = batch["src_text"][0]
+            target_text = batch["tgt_text"][0]
+            model_out_text = tokenizer_tgt.decode(model_out.detach().cpu().numpy())
+
+            # source_texts.append(source_text)
+            # expected.append(target_text)
+            # predicted.append(model_out_text)
+
+            # print to console . we'll not use simple print bcz we've progress bar also . 
+            # so its reccommeded to use tqdm's print method during progress bar otherwise
+            # if use use simple print the output will interfer when the progress bar is running .
+            print_msg("-" * console_width)
+            print_msg(f"SOURCE : {source_text}")
+            print_msg(f"TARGET : {target_text}")
+            print_msg(f"PREDICTED : {model_out_text}")
+
+            if count == num_examples:
+                break
+
+    # if writer:
+        # TorchMetrics , charerrorrate , BLUE , worderrorrate
+
+
 
 def get_all_sentences(ds , lang):
     for item in ds:
-        yield item["transaltion"][lang] # extracts only one language from pair of sentences in ds   
+        yield item["translation"][lang] # extracts only one language from pair of sentences in ds   
 
 def get_or_build_tokenizer(config , ds , lang):
     # config = configuration of our model
     tokenizer_path = Path(config["tokenizer_file"].format(lang))
     if not Path.exists(tokenizer_path):
-        tokenizer = Tokenizer(WordLevel)(unk_token = "[UNK]")
+        tokenizer = Tokenizer(WordLevel(unk_token="[UNK]"))
         tokenizer.pre_tokenizer = Whitespace()
         trainer = WordLevelTrainer(special_tokens=["[UNK]" , "[PAD]" , "[SOS]" , "[EOS]"] , min_frequency=2)
         # min_frequency = means that for a word to appear in our vocab it has to have min freq of atleast 2
@@ -83,7 +176,7 @@ def get_ds(config):
         # load sentence from each pair i.e. src & tgt and then convert them into ids
         # using tokenizer and i check the length .
         src_ids = tokenizer_src.encode(item['translation'][config['lang_src']]).ids
-        tgt_ids = tokenizer_src.encode(item['translation'][config['lang_tgt']]).ids
+        tgt_ids = tokenizer_tgt.encode(item['translation'][config['lang_tgt']]).ids
         max_len_src = max(max_len_src , len(src_ids))
         max_len_tgt = max(max_len_tgt , len(tgt_ids))
 
@@ -133,7 +226,7 @@ def train_model(config):
     initial_epoch = 0
     global_step = 0
 
-    if config["prelaod"]:
+    if config["preload"]:
         model_filename = get_weights_file_path(config , config['preload'])
         print(f"Preloading model : {model_filename}")
         state = torch.load(model_filename)
@@ -162,14 +255,21 @@ def train_model(config):
     #         b 0.05 0.95 0.05
     #         c 0.05 0.05 0.95
     loss_fn = nn.CrossEntropyLoss(
+        # ignore_index=tokenizer_tgt.token_to_id("[PAD]"),
         ignore_index=tokenizer_src.token_to_id("[PAD]"),
         label_smoothing = 0.1 # takes 0.1% from the highest confident scores gives to others 
     ).to(device)
 
     for epoch in range(initial_epoch , config["epochs"]):
-        model.train()
+        # usually validation is ran after every few steps
+        # but here i wanna see it at every iteration
+
+        # model.train()
+
         batch_iterator = tqdm(train_dataloader , desc = f"Processing epoch {epoch:02d}")
         for batch in batch_iterator:
+            model.train()
+
             # get the tensors
             encoder_input = batch["encoder_input"].to(device) # (B , seq_len)
             decoder_input = batch["decoder_input"].to(device) # (B , seq_len)
@@ -197,11 +297,13 @@ def train_model(config):
             writer.add_scalar("train loss : " , loss.item() , global_step)
 
             # Backpropogate the loss 
-            loss.Backward()
+            loss.backward()
 
             # update the weights
             optimizer.step()
             optimizer.zero_grad()
+
+            run_validation(model , val_dataloader , tokenizer_src , tokenizer_tgt , config["seq_len"] , device , lambda msg : batch_iterator.write(msg) , global_step , writer)
 
             global_step += 1
 
@@ -210,7 +312,15 @@ def train_model(config):
         torch.save({
             "epoch" : epoch,
             "model_state_dict" : model.state_dict(),
-            "optimizer_state_dict" : model.state_dict(),
+            "optimizer_state_dict" : optimizer.state_dict(),
             "global_step" : global_step
         } , model_filename)
 
+if __name__ == "__main__":
+    # use this if 
+    # warnings.filterwarnings("ignore")
+
+    warnings.simplefilter("default")
+
+    config = get_config()
+    train_model(config)

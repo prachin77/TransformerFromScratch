@@ -1,0 +1,8 @@
+# Third-party packages imported by config.py, dataset.py, model.py, and train.py.
+# Python standard-library modules (for example pathlib, math, typing, and warnings)
+# are included with Python and do not need to be installed separately.
+torch
+datasets
+tokenizers
+tensorboard
+tqdm
