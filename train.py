@@ -1,15 +1,23 @@
+from model import build_transformer
+from dataset import BilingualDataset , casual_mask
+from config import get_config , get_weights_file_path
+
 import torch
 import torch.nn as nn
-from model import build_transformer
-from torch.utils.data import Dataloader , Dataset , random_split
+from torch.utils.data import Dataset , DataLoader , random_split
 from torch.utils.tensorboard import SummaryWriter
-from dataset import BilingualDataset , casual_mask
+
+# Huggingface datasets and tokenizers
 from datasets import load_dataset
 from tokenizers import Tokenizer
 from tokenizers.models import WordLevel
 from tokenizers.trainers import WordLevelTrainer
 from tokenizers.pre_tokenizers import Whitespace
+
+from tqdm import tqdm
 from pathlib import Path
+import os
+
 
 
 def get_all_sentences(ds , lang):
@@ -83,8 +91,8 @@ def get_ds(config):
     print(f"Max length of target sentence : {max_len_tgt}")
 
     # create datalolader 
-    train_dataloader = Dataloader(train_ds , batch_size = config["batch_size"], shuffle = True)
-    val_dataloader = Dataloader(val_ds , batch_size = 1 , shuffle = True)
+    train_dataloader = DataLoader(train_ds , batch_size = config["batch_size"], shuffle = True)
+    val_dataloader = DataLoader(val_ds , batch_size = 1 , shuffle = True)
 
     return train_dataloader , val_dataloader , tokenizer_src , tokenizer_tgt
 
@@ -121,5 +129,88 @@ def train_model(config):
     optimizer = torch.optim.Adam(model.parameters() , lr = config["lr"] , eps=1e-9)
 
 
+    # this allows to restore the state of model and optimzer if in case model crashes in training
+    initial_epoch = 0
+    global_step = 0
 
-    
+    if config["prelaod"]:
+        model_filename = get_weights_file_path(config , config['preload'])
+        print(f"Preloading model : {model_filename}")
+        state = torch.load(model_filename)
+        initial_epoch = state['epoch'] + 1
+        optimizer.load_state_dict(state['optimzer_state_dict'])
+        global_step = state["global_step"]
+
+    # we need to tell what index to ignore . we want it to
+    # ignore PAD token so that it doesn't contribute to the loss
+    # We'll also use label smoothing 
+    # label smoothing = it allows the model to be less confident about its descision
+    # lets say you have 3 factors for classification and you want your model to give class to 
+    # each one of them . ideally what model will do is it'll give 1 to correct class and 0 to 
+    # incorrect ones which translates to 100% confidence 
+    #       scores
+    # class
+    #     a 1 0 0 
+    #     b 0 1 0
+    #     c 0 0 1
+    # we don't want this we want the model to give scores to even the incorrect one and 
+    # reduce the confidence for the correct one . 
+    # maybe -> this helps in reducing overfitting -> yeah my anticipation is true. hurrrrrrrayyyyyyyyy!
+    #          scores
+    #     class
+    #         a 0.95 0.05 0.05 
+    #         b 0.05 0.95 0.05
+    #         c 0.05 0.05 0.95
+    loss_fn = nn.CrossEntropyLoss(
+        ignore_index=tokenizer_src.token_to_id("[PAD]"),
+        label_smoothing = 0.1 # takes 0.1% from the highest confident scores gives to others 
+    ).to(device)
+
+    for epoch in range(initial_epoch , config["epochs"]):
+        model.train()
+        batch_iterator = tqdm(train_dataloader , desc = f"Processing epoch {epoch:02d}")
+        for batch in batch_iterator:
+            # get the tensors
+            encoder_input = batch["encoder_input"].to(device) # (B , seq_len)
+            decoder_input = batch["decoder_input"].to(device) # (B , seq_len)
+            encoder_mask = batch["encoder_mask"].to(device) # (B , 1 , 1 , seq_len) -> hides all the padding token
+            decoder_mask = batch["decoder_mask"].to(device) # (B , 1 , seq_len , seq_len) -> hides all the padding token + also hides sibsequent words 
+
+            # run the tensors through the transformer 
+            encoder_output = model.encode(encoder_input , encoder_mask) # (B , seq_len , d_model)
+            decoder_output = model.decode(encoder_output , encoder_mask , decoder_input , decoder_mask) # (B , seq_len , d_model)
+            # projection output bcz we wanna map decoder output to the vocab
+            proj_output = model.project(decoder_output) # (B , seq_len , tgt_vocab_size)
+
+            # here we'll compare output of the model to the labels 
+            # each dim tells whats the pos of each word in that vocab
+            # also we want these 2 to be comparable
+            # (B , seq_len , tgt_vocab_size) == (B , seq_len)
+            label = batch["label"].to(device) # (B , seq_len)
+
+            # it transforms 
+            # (B , seq_len , tgt_vocab_size) -> (B * seq_len , tgt_vocab_size)
+            loss = loss_fn(proj_output.view(-1 , tokenizer_tgt.get_vocab_size()) , label.view(-1))
+            batch_iterator.set_postfix({f"loss" : f"{loss.item():6.3f}"})
+
+            # log the loss in tensorboard
+            writer.add_scalar("train loss : " , loss.item() , global_step)
+
+            # Backpropogate the loss 
+            loss.Backward()
+
+            # update the weights
+            optimizer.step()
+            optimizer.zero_grad()
+
+            global_step += 1
+
+        # save the model and the end of every epoch 
+        model_filename = get_weights_file_path(config , f"{epoch:02d}")
+        torch.save({
+            "epoch" : epoch,
+            "model_state_dict" : model.state_dict(),
+            "optimizer_state_dict" : model.state_dict(),
+            "global_step" : global_step
+        } , model_filename)
+
