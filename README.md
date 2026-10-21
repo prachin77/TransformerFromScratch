@@ -16,7 +16,7 @@ A from-scratch PyTorch implementation of the original encoder–decoder **Transf
 | Feed-forward | `Linear(d_model → d_ff) → ReLU → Dropout → Linear(d_ff → d_model)` |
 | Output | Linear projection to target vocab (raw logits, no softmax) |
 
-Defaults in `build_transformer`: `d_model=128`, `N=3`, `h=4`, `d_ff=512`, `dropout=0.01`.
+`config.py` currently runs the paper-sized model: `d_model=512`, `N=6`, `h=8`, `d_ff=512`, `dropout=0.01` — about 71M parameters with a 30k vocab (the projection and both embeddings dominate).
 
 The model exposes `encode`, `decode`, and `project` separately so the encoder output can be reused during inference and attention can be inspected.
 
@@ -61,29 +61,44 @@ TensorBoard:
 tensorboard --logdir runs
 ```
 
+If your terminal says `tensorboard` is not recognized or cannot find the command, run it through the Python environment where the project dependencies are installed:
+
+```powershell
+py -m tensorboard.main --logdir runs
+```
+
+On systems where `py` is unavailable, use `python -m tensorboard.main --logdir runs` instead. If you use a virtual environment, activate it first. Then open http://localhost:6006/ in your browser. TensorFlow is not required to view this project's PyTorch logs.
+
 ## Configuration
 
 Edit `config.py`:
 
 | Key | Default | Notes |
 | --- | --- | --- |
-| `batch_size` | `2` | Small to fit limited GPU memory |
-| `epochs` | `20` | |
-| `lr` | `1e-3` | Adam, `eps=1e-9`, `foreach=False` |
+| `batch_size` | `8` | T4 profile; use `2`–`4` on smaller GPUs |
+| `epochs` | `20` | ~1–1.5 h/epoch at 100k pairs on a T4 |
+| `lr` | `1e-3` | Only the starting value; the Noam schedule sets the real LR per step |
+| `warmup_steps` | `4000` | Steps to warm the LR up before decay |
 | `seq_len` | `350` | Both source and target; longer sentences raise `ValueError` |
-| `d_model` | `128` | Paper uses `512` |
+| `d_model` | `512` | Paper size; `128` trains much faster on a subset |
 | `lang_src` / `lang_tgt` | `en` / `hi` | |
 | `model_folder` | `weights` | |
 | `model_basename` | `t_model` | Checkpoints: `weights/t_model00.pt`, … |
-| `preload` | `None` | Epoch string to resume from, e.g. `"08"` |
+| `preload` | `None` | Epoch string to resume from, e.g. `"08"` (weights + optimizer restored) |
 | `tokenizer_file` | `tokenizer_{0}.json` | `{0}` → language code |
 | `experiment_name` | `runs/model` | TensorBoard log directory |
+| `rebuild_tokenizer` | `False` | `True` once to retrain the tokenizers on the current data |
+| `vocab_size` | `16000` | Vocab cap, only applied when the tokenizer is (re)built |
+| `train_samples` | `100_000` | Pairs kept from the train split; `None` for all |
+| `repetition_penalty` | `2.0` | Validation-only nudge against token loops; `0.0` to disable |
+| `use_amp` | `True` | fp16 autocast + GradScaler (T4 tensor cores); `False` for fp32 debugging |
+| `seed` | `42` | Fixed seed for the shuffled subset and the 90/10 split |
 
 ## Data pipeline
 
-- Dataset: `Helsinki-NLP/opus-100`, config `en-hi`. The split is set to `"test"` for light local runs — switch to `"train"` for real training.
+- Dataset: `Helsinki-NLP/opus-100`, config `en-hi`, `train` split, shuffled with a fixed seed and then capped at `train_samples`.
 - Split 90/10 into train/validation.
-- Tokenizers are built once with `WordLevel` + `Whitespace` pre-tokenizer, `min_frequency=2`, and special tokens `[UNK] [PAD] [SOS] [EOS]`. They are cached to JSON and reused on later runs.
+- Tokenizers use `WordLevel` + `Whitespace` pre-tokenizer, `min_frequency=2`, `vocab_size` cap, and special tokens `[UNK] [PAD] [SOS] [EOS]`. Cached JSONs are reused unless `rebuild_tokenizer` is enabled.
 - Each sample is padded to `seq_len`:
   - encoder input: `[SOS] tokens [EOS] [PAD]…`
   - decoder input: `[SOS] tokens [PAD]…`
@@ -93,19 +108,21 @@ Edit `config.py`:
 ## Training
 
 - Loss: `CrossEntropyLoss(ignore_index=[PAD], label_smoothing=0.1)` on flattened logits.
-- Optimizer: Adam with `lr=1e-3`.
+- Optimizer: Adam (`eps=1e-9`, `foreach=False`) wrapped in a Noam warmup + inverse-sqrt schedule (`d_model^-0.5 · min(step^-0.5, step · warmup^-1.5)`).
+- Mixed precision: fp16 autocast + `GradScaler` on CUDA (`use_amp`). The T4 has fp16 tensor cores but no bf16/TF32, so this is the main speedup.
+- Training is single-process / single GPU. No `DataParallel` or DDP.
 - Validation runs every epoch on a batch-size-1 loader, greedily decoding 2 samples and printing source / target / prediction.
-- After every epoch the model, optimizer state, epoch, and global step are saved to `weights/t_modelXX.pt`.
+- After every epoch the model, optimizer state, epoch, and global step are saved to `weights/t_modelXX.pt`. Resuming restores all four.
 
 ## Inference
 
-`train.py` provides `greedy_decode`, which encodes the source once, then feeds the decoder one token at a time starting from `[SOS]`, appending the argmax token until `[EOS]` or `max_len`.
+`train.py` provides `greedy_decode`, which encodes the source once, then feeds the decoder one token at a time starting from `[SOS]`, appending the argmax token until `[EOS]` or `max_len`. An optional `repetition_penalty` subtracts a constant from already-generated tokens so validation output stays readable while the model is undertrained.
 
 ## Known limitations
 
-- `preload` restores epoch, optimizer, and global step, but does **not** call `model.load_state_dict`, so weights are not actually restored. Add that call before relying on resume.
-- Only a checkpoint/step system is implemented; no BLEU or other metric is computed.
-- Evaluation reuses the `test` split by default, so reported outputs are not a held-out benchmark.
+- No BLEU or other metric is computed; quality is judged from the printed samples.
+- Checkpoints saved before the LayerNorm change have `(1,)`-shaped `gamma`/`beta` and will not load into the current model.
+- `seq_len` pads every sample to the full length, so short sentences still cost `seq_len` steps.
 
 ## License
 

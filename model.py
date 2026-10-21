@@ -69,11 +69,23 @@ class PositionalEncoding(nn.Module):
 # gamma = multiplicative i.e. its multiplied by x
 # beta = additive i.e. its added by x
 class LayerNorm(nn.Module):
-    def __init__(self , eps : float = 10**-6) -> None:
+    # old version had gamma & beta as a single number (shape (1 ,)) and beta started
+    # at ones . that means every feature of the vector was scaled and shifted by the
+    # same value , so the layer basically had nothing of its own to learn .
+    # in the paper each feature gets its own gamma & beta of size d_model , and beta
+    # starts at 0 so at the beginning the layer only normalises and learns the shift
+    # by itself . old __init__ kept below for reference .
+    #
+    # def __init__(self , eps : float = 10**-6) -> None:
+    #     super().__init__()
+    #     self.eps = eps
+    #     self.gamma = nn.Parameter(torch.ones(1))
+    #     self.beta = nn.Parameter(torch.ones(1))
+    def __init__(self , d_model : int , eps : float = 10**-6) -> None:
         super().__init__()
         self.eps = eps
-        self.gamma = nn.Parameter(torch.ones(1))
-        self.beta = nn.Parameter(torch.ones(1))
+        self.gamma = nn.Parameter(torch.ones(d_model))
+        self.beta = nn.Parameter(torch.zeros(d_model))
 
     def forward(self , x):
         mean = x.mean(dim = -1 , keepdim = True) # mean cancels the dim but we wanna keep it
@@ -146,21 +158,24 @@ class MultiHeadAttentionBlock(nn.Module):
 
 
 class ResidualConnection(nn.Module):
-    def __init__(self , dropout : float) -> None:
+    # d_model is passed down now because LayerNorm needs to know how many features
+    # it has to learn a gamma & beta for . old line was : self.norm = LayerNorm()
+    def __init__(self , d_model : int , dropout : float) -> None:
         super().__init__()
         self.dropout = nn.Dropout(dropout)
-        self.norm = LayerNorm()
+        self.norm = LayerNorm(d_model)
 
     def forward(self, x , sublayer):
         return x + self.dropout(sublayer(self.norm(x)))
 
 
 class EncoderBlock(nn.Module):
-    def __init__(self , self_attention_block : MultiHeadAttentionBlock , feed_forward_block : FeedForwardBlock , dropout : float) -> None:
+    # d_model added so it can be forwarded to the residual connections
+    def __init__(self , self_attention_block : MultiHeadAttentionBlock , feed_forward_block : FeedForwardBlock , d_model : int , dropout : float) -> None:
         super().__init__()
         self.self_attention_block = self_attention_block
         self.feed_forward_block = feed_forward_block
-        self.residual_connections = nn.ModuleList([ResidualConnection(dropout) for _ in range(2)]) # 2 connections
+        self.residual_connections = nn.ModuleList([ResidualConnection(d_model , dropout) for _ in range(2)]) # 2 connections
 
     def forward(self , x , src_mask):
         # src_mask = mask that we apply to input of the encoder
@@ -169,10 +184,13 @@ class EncoderBlock(nn.Module):
         return x
 
 class Encoder(nn.Module):
-    def __init__(self , layers : nn.ModuleList) -> None:   
+    # d_model added for the final LayerNorm (was LayerNorm() , which had no per feature
+    # gamma & beta). old line kept in the comment below .
+    def __init__(self , layers : nn.ModuleList , d_model : int) -> None:   
         super().__init__()
         self.layers = layers 
-        self.norm = LayerNorm()
+        # self.norm = LayerNorm()
+        self.norm = LayerNorm(d_model)
 
     def forward(self , x , mask):
         for layer in self.layers:
@@ -182,12 +200,13 @@ class Encoder(nn.Module):
 class DecoderBlock(nn.Module):
     # Here we'll not create seperate class for masked multihead attention because
     # multihead attention class already implements masking
-    def __init__(self , self_attention_block : MultiHeadAttentionBlock , cross_attention_block : MultiHeadAttentionBlock , feed_forward_block : FeedForwardBlock , dropout : float):
+    # d_model added so it can be forwarded to the 3 residual connections
+    def __init__(self , self_attention_block : MultiHeadAttentionBlock , cross_attention_block : MultiHeadAttentionBlock , feed_forward_block : FeedForwardBlock , d_model : int , dropout : float):
         super().__init__()
         self.self_attention_block = self_attention_block
         self.cross_attention_block = cross_attention_block
         self.feed_forward_block = feed_forward_block
-        self.residual_connections = nn.ModuleList([ResidualConnection(dropout) for _ in range(3)])
+        self.residual_connections = nn.ModuleList([ResidualConnection(d_model , dropout) for _ in range(3)])
 
     def forward(self , x , encoder_output , src_mask , tgt_mask):
         # tgt_mask = mask applied to decoder 
@@ -197,10 +216,12 @@ class DecoderBlock(nn.Module):
         return x
 
 class Decoder(nn.Module):
-    def __init__(self , layers : nn.ModuleList) -> None:
+    # d_model added for the final LayerNorm , same reason as in Encoder
+    def __init__(self , layers : nn.ModuleList , d_model : int) -> None:
         super().__init__()
         self.layers = layers
-        self.norm = LayerNorm()
+        # self.norm = LayerNorm()
+        self.norm = LayerNorm(d_model)
 
     def forward(self , x , encoder_output , src_mask , tgt_mask):
         for layer in self.layers:
@@ -246,6 +267,18 @@ class Transformer(nn.Module):
         #   need to calculate it everytime . Also we prefer to keep output seperate for visualizing 
         #   the attention .
 
+    # why a forward() on top of the 3 methods below ?
+    # it gives the training loop a single entry point , so the whole pass can be wrapped in
+    # one autocast block (fp16 matmuls , fp32 softmax / layernorm) instead of 3 separate
+    # blocks . it does exactly the same 3 steps in the same order , nothing else .
+    # encode / decode / project still exist because inference wants them separately (encode
+    # the source once and reuse it for every generated token , and keep the decoder output
+    # around for attention plots) .
+    def forward(self , src , src_mask , tgt , tgt_mask):
+        encoder_output = self.encode(src , src_mask)
+        decoder_output = self.decode(encoder_output , src_mask , tgt , tgt_mask)
+        return self.project(decoder_output)
+
     def encode(self, src , src_mask):
         src = self.src_embed(src)
         src = self.src_pos(src)
@@ -259,7 +292,7 @@ class Transformer(nn.Module):
     def project(self, x):
         return self.projection_layer(x)
 
-def build_transformer(src_vocab_size : int , tgt_vocab_size : int , src_seq_len : int , tgt_seq_len : int , d_model : int = 128 , N : int = 3 , h : int = 4 , dropout : float = 0.01 , d_ff : int = 512) -> Transformer:
+def build_transformer(src_vocab_size : int , tgt_vocab_size : int , src_seq_len : int , tgt_seq_len : int , d_model : int = 512 , N : int = 6 , h : int = 8 , dropout : float = 0.01 , d_ff : int = 512) -> Transformer:
     # originally
     # d_model = 512 
     # N = 6 
@@ -285,7 +318,7 @@ def build_transformer(src_vocab_size : int , tgt_vocab_size : int , src_seq_len 
     for _ in range(N):
         encoder_self_attention_block = MultiHeadAttentionBlock(d_model , h , dropout)
         feed_forward_block = FeedForwardBlock(d_model , d_ff , dropout)
-        encoder_block = EncoderBlock(encoder_self_attention_block , feed_forward_block , dropout)
+        encoder_block = EncoderBlock(encoder_self_attention_block , feed_forward_block , d_model , dropout)
         encoder_blocks.append(encoder_block)
 
     # create decoder blocks 
@@ -294,12 +327,14 @@ def build_transformer(src_vocab_size : int , tgt_vocab_size : int , src_seq_len 
         decoder_self_attention_block = MultiHeadAttentionBlock(d_model , h , dropout)
         decoder_cross_attention_block = MultiHeadAttentionBlock(d_model , h , dropout)
         feed_forward_block = FeedForwardBlock(d_model , d_ff , dropout)
-        decoder_block = DecoderBlock(decoder_self_attention_block , decoder_cross_attention_block , feed_forward_block , dropout)
+        decoder_block = DecoderBlock(decoder_self_attention_block , decoder_cross_attention_block , feed_forward_block , d_model , dropout)
         decoder_blocks.append(decoder_block)
 
     # create encoder and decoder 
-    encoder = Encoder(nn.ModuleList(encoder_blocks))
-    decoder = Decoder(nn.ModuleList(decoder_blocks))
+    # d_model is passed along now so their final LayerNorm can size gamma & beta 
+    # old lines were : Encoder(nn.ModuleList(encoder_blocks)) / Decoder(nn.ModuleList(decoder_blocks))
+    encoder = Encoder(nn.ModuleList(encoder_blocks) , d_model)
+    decoder = Decoder(nn.ModuleList(decoder_blocks) , d_model)
 
     # create projection layer i.e linear layer 
     projection_layer = ProjectionLayer(d_model , tgt_vocab_size)

@@ -2,7 +2,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset , DataLoader
+from torch.utils.data import Dataset 
 
 class BilingualDataset(Dataset):
     def __init__(self , ds , tokenizer_src , tokenizer_tgt , src_lang , tgt_lang , seq_len) -> None:
@@ -89,8 +89,17 @@ class BilingualDataset(Dataset):
             # why this mask ?
             # because we're increase the size of encoder input by adding PAD tokens ,
             # but we don't want these tokens to get involved in attention mechanism  
+            # careful with the number of unsqueeze(0) here . this dict entry gets stacked by
+            # the DataLoader into (B , 1 , seq_len) if we use one unsqueeze , and into
+            # (B , 1 , 1 , seq_len) if we use two . inside attention the scores are
+            # (B , h , seq_len , seq_len) , so with only one unsqueeze torch tries to line up
+            # the batch size B against the number of heads h and dies with
+            # "size of tensor a (2) must match tensor b (8)" as soon as batch_size > 1 .
+            # with B = 1 it doesn't crash but the mask gets applied head by head , which is
+            # wrong too . so the double unsqueeze is the one we want . the single unsqueeze
+            # version is kept commented below only because it looks tempting .
             # "encoder_mask" : (encoder_input != self.pad_token).unsqueeze(0).int(), # (1 , 1 , seq_len)
-            "encoder_mask" : (encoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int(), # (1 , 1 , seq_len)
+            "encoder_mask" : (encoder_input != self.pad_token).unsqueeze(0).unsqueeze(0).int(), # (1 , 1 , 1 , seq_len)
             # special tokens for decoder which is casual mask . which means that each word can only look at 
             # previous words and ignore PAD tokens
             "decoder_mask" : (decoder_input != self.pad_token).unsqueeze(0).int() & casual_mask(decoder_input.size(0)), # (1 , seq_len) & (1 , seq_len , seq_len)
