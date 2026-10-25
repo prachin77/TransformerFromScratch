@@ -2,6 +2,8 @@
 
 A from-scratch PyTorch implementation of the original encoder–decoder **Transformer** ("Attention Is All You Need") trained for **English → Hindi** translation. No prebuilt transformer layers — attention, positional encoding, layer norm, residual blocks, and the training loop are all implemented directly.
 
+> **Status / notice:** the reference run is **20 epochs on a 50k-pair subset** (~6.9 h on a single T4). Full validation — BLEU/chrF over the whole validation split — was **not** run because of compute limits; validation is limited to 2 sample translations per epoch. This is a learning/from-scratch build, not a tuned translation system: **results would improve substantially with the full 538k pairs, more epochs, and a BPE tokenizer.** Raw log: [`logs/train_50k_t4.log`](logs/train_50k_t4.log).
+
 ---
 
 ## Architecture
@@ -29,6 +31,7 @@ dataset.py           BilingualDataset, padding, causal mask
 train.py             Data loading, tokenizers, training loop, greedy decode, validation
 tokenizer_en.json    Trained WordLevel tokenizer (English)
 tokenizer_hi.json    Trained WordLevel tokenizer (Hindi)
+logs/                Reference training log (50k subset, 20 epochs)
 requirements.txt     Dependencies
 .env                 HF_TOKEN (git-ignored)
 weights/             Per-epoch checkpoints (git-ignored)
@@ -76,7 +79,7 @@ Edit `config.py`:
 | Key | Default | Notes |
 | --- | --- | --- |
 | `batch_size` | `8` | T4 profile; use `2`–`4` on smaller GPUs |
-| `epochs` | `20` | ~0.4–1.2 h/epoch at 50k pairs (AMP; depends on `seq_len` / vocab) |
+| `epochs` | `20` | **~20.7 min/epoch measured** (50k pairs, AMP, T4) → ~6.9 h for 20 |
 | `lr` | `1e-3` | Only the starting value; the Noam schedule sets the real LR per step |
 | `warmup_steps` | `4000` | Steps to warm the LR up before decay |
 | `seq_len` | `350` | Both source and target; longer sentences raise `ValueError` |
@@ -140,13 +143,15 @@ Steps per epoch = `train_samples × 0.9 / batch_size`:
 - 50k subset → 45,000 / 8 = **5,625 steps**
 - full 538k → 484,200 / 8 = **60,525 steps**
 
-Training time per epoch (50k subset, 45k steps' worth of samples):
+Training time per epoch (50k subset, 45k samples):
 
 | Config | h/epoch | 20 epochs |
 |---|---|---|
-| fp32, seq 350, 30k vocab | 1.2–2 | 24–40 h |
-| AMP, seq 350, 30k vocab | 0.6–1.2 | 12–24 h |
-| AMP, seq 150, 16k vocab | 0.35–0.6 | **7–12 h** |
+| AMP, seq 350, 30k vocab — **measured** | **0.34** (20.7 min, 4.54 it/s) | **~6.9 h** |
+| fp32, seq 350, 30k vocab (estimated) | 0.7–1.2 | 14–24 h |
+| AMP, seq 150, 16k vocab (estimated) | 0.2–0.3 | 4–6 h |
+
+Measured on 1×T4, Colab: 5,625 steps/epoch at 4.54 it/s. Add ~2–5 min for the dataset download/cache and the max-length scan.
 
 VRAM does not depend on `train_samples` — the dataset lives in RAM, not VRAM (50k pairs ≈ a few hundred MB).
 
@@ -156,9 +161,21 @@ VRAM does not depend on `train_samples` — the dataset lives in RAM, not VRAM (
 
 **Beam search is not implemented** — only greedy. Use beam search (`beam=4–5`) for a final demo or BLEU measurement, where ~1–2 extra BLEU is worth the k× decode time. Don't use it for per-epoch validation: it multiplies decoding cost by the beam width and tells you nothing new about training progress.
 
+## Visualization & metrics (next steps)
+
+Nothing below is implemented — this is the "can be added" list, roughly in cost order:
+
+- **Loss / LR curves** — already logged. `tensorboard --logdir runs` shows `train loss` and `lr` (warmup + decay). First thing to look at.
+- **Validation loss / perplexity** — currently only 2 sample decodes per epoch. Averaging `loss_fn` over the validation loader is a ~10-line addition and far more informative than eyeballing 2 sentences.
+- **BLEU / chrF** — `sacrebleu` over the whole validation split. Expensive (needs full decoding), so run it once at the end, not per epoch.
+- **Attention maps** — every `MultiHeadAttentionBlock` already keeps `self.attention_scores` from the last forward pass. Plot encoder self-attention (source↔source) and decoder cross-attention (target↔source) as heatmaps with `matplotlib` to see whether alignment is learned.
+- **Gradient norm** — cheap health check; log `clip_grad_norm_`'s return value and plot it next to the loss.
+- **Sample grid in TensorBoard** — write a few source/target/prediction triples with `writer.add_text` so runs stay comparable.
+
 ## Known limitations
 
-- No BLEU or other metric is computed; quality is judged from the printed samples.
+- Trained on **50k of 538k pairs for 20 epochs**; the loss is still noisy (3.86–5.53) and sentences are often unrelated to the source. More data and epochs are the main lever.
+- **No BLEU/chrF.** Validation is 2 decoded samples per epoch, so there is no held-out quality number.
 - Checkpoints saved before the LayerNorm change have `(1,)`-shaped `gamma`/`beta` and will not load into the current model.
 - `seq_len` pads every sample to the full length, so short sentences still cost `seq_len` steps.
 

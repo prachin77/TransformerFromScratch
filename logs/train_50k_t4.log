@@ -1,0 +1,169 @@
+# Reference run: 50k subset, 20 epochs, 1x T4 (Colab)
+# config: batch_size=8, seq_len=350, d_model=512, N=6, h=8, d_ff=512, AMP on, warmup_steps=4000
+# data:   Helsinki-NLP/opus-100 en-hi, shuffled seed 42, 50,000 pairs -> 45,000 train / 5,625 steps per epoch
+# result: 4.54 it/s, ~20.7 min per epoch, 20 epochs ~= 6.9 h
+# loss:   5.436 -> 3.863 (min, epoch 13) -> 5.261 (epoch 12), noisy but trending down
+# note:   epoch 15 was cut at 56% (session end); log ends there
+
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1792910874.311961    1483 cpu_feature_guard.cc:227] This TensorFlow binary is optimized to use available CPU instructions in performance-critical operations.
+To enable the following instructions: AVX2 AVX512F FMA, in other operations, rebuild TensorFlow with the appropriate compiler flags.
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1792910876.436950    1483 cudart_stub.cc:31] Could not find cuda drivers on your machine, GPU will not be used.
+using device : cuda
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+README.md: 100% 65.4k/65.4k [00:00<00:00, 98.9MB/s]
+
+en-hi/test-00000-of-00001.parquet: downloading bytes:   0% 0.00/259k [00:00<?, ?B/s]
+en-hi/test-00000-of-00001.parquet: downloading bytes: 100% 259k/259k [00:01<00:00, 186kB/s, 25.0kB/s  ]
+en-hi/test-00000-of-00001.parquet: reconstructing file: 100% 259k/259k [00:01<00:00, 186kB/s, 25.0kB/s  ]
+
+en-hi/train-00000-of-00001.parquet: downloading bytes:  87% 56.4M/65.2M [00:01<00:00, 51.8MB/s, 4.34MB/s  ]
+en-hi/train-00000-of-00001.parquet: downloading bytes: 100% 65.0M/65.0M [00:02<00:00, 28.9MB/s, 5.99MB/s  ]
+en-hi/train-00000-of-00001.parquet: reconstructing file: 100% 65.2M/65.2M [00:02<00:00, 29.0MB/s, 6.18MB/s  ]
+
+en-hi/validation-00000-of-00001.parquet: downloading bytes:  46% 113k/247k [00:01<00:01, 90.4kB/s]
+en-hi/validation-00000-of-00001.parquet: downloading bytes: 100% 247k/247k [00:01<00:00, 159kB/s, 23.8kB/s  ]
+en-hi/validation-00000-of-00001.parquet: reconstructing file: 100% 247k/247k [00:01<00:00, 159kB/s, 23.9kB/s  ]
+Generating test split: 100% 2000/2000 [00:00<00:00, 60083.86 examples/s]
+Generating train split: 100% 534319/534319 [00:00<00:00, 764273.87 examples/s]
+Generating validation split: 100% 2000/2000 [00:00<00:00, 313452.21 examples/s]
+Total sentence pairs loaded : 50000
+Max length of source sentence : 256
+Max length of target sentence : 236
+Processing epoch 00: 100% 5625/5625 [20:38<00:00,  4.54it/s, loss=5.436]
+--------------------------------------------------------------------------------
+SOURCE : ...it IS you.
+TARGET : ...आप ही हैं।
+PREDICTED : मैं आप मुझे एक हूँ .
+--------------------------------------------------------------------------------
+SOURCE : %1: the message text is spoken.
+TARGET : % 1: संदेश पाठ को पढ़ा जाएगा. @ info: whatsthis Combination of multiple whatsthis items
+PREDICTED : '% s ' के लिए प्रयोग करें
+Processing epoch 01: 100% 5625/5625 [20:40<00:00,  4.54it/s, loss=5.529]
+--------------------------------------------------------------------------------
+SOURCE : - Get right out there.
+TARGET : फ़ौरन बाहर निकलो।
+PREDICTED : - हाँ .
+--------------------------------------------------------------------------------
+SOURCE : Angus
+TARGET : एन्गर्सargentina. kgm
+PREDICTED : name ( optional , probably does not need a translation )
+Processing epoch 02: 100% 5625/5625 [20:40<00:00,  4.53it/s, loss=5.336]
+--------------------------------------------------------------------------------
+SOURCE : Then ask them whether they are stronger in creation or those (others) whom We have created. Surely We created them of firm clay.
+TARGET : अब उनके पूछो कि उनके पैदा करने का काम अधिक कठिन है या उन चीज़ों का, जो हमने पैदा कर रखी है। निस्संदेह हमने उनको लेसकर मिट्टी से पैदा किया।
+PREDICTED : और जब हमने उन लोगों को झुठलाया था कि " हम के लिए एक यातना जो कुछ भी अपनी क़ौम की ओर से पहले , ताकि वे उन्हें उनके बीच ज़ालिम है
+--------------------------------------------------------------------------------
+SOURCE : - Do they know you have this phone?
+TARGET : - उन्हें पता है कि तुम्हारे पास ये फ़ोन है?
+PREDICTED : और हमने तुम्हें एक बरसात बरसाई , " हम उसे मार डाला दिया है ।"
+Processing epoch 03: 100% 5625/5625 [20:39<00:00,  4.54it/s, loss=5.527]
+--------------------------------------------------------------------------------
+SOURCE : [ WHIP CRACKING ]
+TARGET : [कोड़ा खुर]
+PREDICTED : . kgm
+--------------------------------------------------------------------------------
+SOURCE : Ascending
+TARGET : बढ़ते क्रम में
+PREDICTED : 
+Processing epoch 04: 100% 5625/5625 [20:39<00:00,  4.54it/s, loss=5.395]
+--------------------------------------------------------------------------------
+SOURCE : Character Ranges
+TARGET : अक्षर सीमाएँ
+PREDICTED : 
+--------------------------------------------------------------------------------
+SOURCE : To Allah belongs all that is in the heavens and the earth. Allah encompasses everything.
+TARGET : जो कुछ आकाशों में और जो कुछ धरती में है, वह अल्लाह ही का है और अल्लाह हर चीज़ को घेरे हुए है
+PREDICTED : और ख़ुदा की तरफ से डरो जो कुछ आसमानों में है
+Processing epoch 05: 100% 5625/5625 [20:40<00:00,  4.54it/s, loss=4.846]
+--------------------------------------------------------------------------------
+SOURCE : Fact.
+TARGET : तथ्य.
+PREDICTED : यह .
+--------------------------------------------------------------------------------
+SOURCE : God is my Lord and your Lord, so worship Him alone. That is the right path.
+TARGET : और इसमें तो शक ही नहीं कि खुदा (ही) मेरा (भी) परवरदिगार है और तुम्हारा (भी) परवरदिगार है तो सब के सब उसी की इबादत करो यही (तौहीद) सीधा रास्ता है
+PREDICTED : और ( ऐ रसूल ) तुम कह दो कि ख़ुदा के सिवा किसी को से डराओ
+Processing epoch 06: 100% 5625/5625 [20:43<00:00,  4.52it/s, loss=4.874]
+--------------------------------------------------------------------------------
+SOURCE : So when you have finished (from your occupation), then stand up for Allah's worship (i.e. stand up for prayer).
+TARGET : अतः जब निवृत हो तो परिश्रम में लग जाओ,
+PREDICTED : और ( ऐ रसूल ) तुम पर नाज़िल करो तो क्या तुमने देखा कि अगर तुम मेरे पास न हो
+--------------------------------------------------------------------------------
+SOURCE : And how will you endure what you have no knowledge of?”
+TARGET : और (सच तो ये है) जो चीज़ आपके इल्मी अहाते से बाहर हो
+PREDICTED : और तुम उस दिन के लिए ( भी ) क़रार दो कि आप से एक गिरोह की तरह को न हो
+Processing epoch 07: 100% 5625/5625 [20:42<00:00,  4.53it/s, loss=5.140]
+--------------------------------------------------------------------------------
+SOURCE : Could not download/ open keyboard layout file from '%1 '.
+TARGET : '% 1' से कुंजीपटल अभिन्यास फ़ाइल डाउनलोड/ खोल नहीं सका.
+PREDICTED : फ़ाइल को फ़िल्टर कर दिया है
+--------------------------------------------------------------------------------
+SOURCE : Hello, Frau Goebbels.
+TARGET : मेरे लिए रुको.
+PREDICTED : और ( ऐ रसूल ) तुम कह दो कि मेरे पास कोई डराने वाला मेहरबान है
+Processing epoch 08: 100% 5625/5625 [20:40<00:00,  4.53it/s, loss=5.100]
+--------------------------------------------------------------------------------
+SOURCE : But those who strive against Our Ayat (proofs, evidences, verses, lessons, signs, revelations, etc.), to frustrate and obstruct them, they will be dwellers of the Hell-fire.
+TARGET : और जिन लोगों ने हमारी आयतों (के झुठलाने में हमारे) आजिज़ करने के वास्ते कोशिश की यही लोग तो जहन्नुमी हैं
+PREDICTED : और जब उनके पास कोई रसूल न तो वह ( बेसाख्ता ) कह दो कि ये लोग अपने परवरदिगार की तरफ से बेहतर है
+--------------------------------------------------------------------------------
+SOURCE : He will say: "Alas the woe! Would that I had sent ahead something in my life."
+TARGET : (उस वक्त) क़हेगा कि काश मैने अपनी (इस) ज़िन्दगी के वास्ते कुछ पहले भेजा होता
+PREDICTED : और ( ऐ रसूल ) तुम कह दो कि ख़ुदा के बारे में से कौन है
+Processing epoch 09: 100% 5625/5625 [20:38<00:00,  4.54it/s, loss=4.666]
+--------------------------------------------------------------------------------
+SOURCE : Africa/Monrovia
+TARGET : अफ्रीका/मानरोबिया
+PREDICTED : अफ्रीका / दिबॉती
+--------------------------------------------------------------------------------
+SOURCE : Enter password for task list %s (user %s) Reason: %s
+TARGET : %s के लिये कूटशब्द डालें (उपयोक्ता %s)
+PREDICTED : ( ऐ रसूल ) तुम कह दो कि मैं तो ख़ुदा के सिवा कोई माबूद नहीं है
+Processing epoch 10: 100% 5625/5625 [20:40<00:00,  4.54it/s, loss=3.945]
+--------------------------------------------------------------------------------
+SOURCE : Look, if the Commander-in-Chief is an imposter and he's the one that ordered the attack, we have to assume that there's no one we can trust.
+TARGET : कमांडर इन चीफ एक ठग है अगर देखो, और उन्होंने हमले का आदेश दिया है कि एक है, हम विश्वास कर सकते हैं कि कोई भी नहीं है कि कल्पना करनी होगी.
+PREDICTED : और ( ऐ रसूल ) तुम कह दो कि ख़ुदा की तरफ से नमाज़ पढ़ा करो
+--------------------------------------------------------------------------------
+SOURCE : Rebase
+TARGET : रिबेस
+PREDICTED : पांचवा
+Processing epoch 11: 100% 5625/5625 [20:40<00:00,  4.53it/s, loss=5.142]
+--------------------------------------------------------------------------------
+SOURCE : A non-empty folder at "{1}" already exists. You can choose to ignore this folder, overwrite or append its contents, or quit.
+TARGET : "{1}" पर एक फ़ोल्डर जो खाली नहीं है, पहले से ही उपस्थित है. आप इस फ़ोल्डर को अनदेखा कर सकते हैं, सामग्री पर लिख और जोड़ सकते हैं, या छोड़ सकते हैं.
+PREDICTED : % s से जोड़ने में विफल .
+--------------------------------------------------------------------------------
+SOURCE : and brought out of it its water and its pasture,
+TARGET : उसमें से उसका पानी और उसका चारा निकाला
+PREDICTED : और उस दिन झुठलाने वालों की ख़राबी है
+Processing epoch 12: 100% 5625/5625 [20:40<00:00,  4.53it/s, loss=5.261]
+--------------------------------------------------------------------------------
+SOURCE : Whether to play a sound to notify of incoming messages.
+TARGET : क्या आने वाली संदेशों के लिए ध्वनि अधिसूचित करने के लिए बजानी है.
+PREDICTED : इस डिस्क पर अतिरिक्त कोई ध्वनि .
+--------------------------------------------------------------------------------
+SOURCE : Full Width
+TARGET : विजेट्स
+PREDICTED : बायाँ
+Processing epoch 13: 100% 5625/5625 [20:43<00:00,  4.53it/s, loss=3.863]
+--------------------------------------------------------------------------------
+SOURCE : Indeed it is We who give life and bring death and We are the inheritors.
+TARGET : और इसमें शक़ नहीं कि हम ही (लोगों को) जिलाते और हम ही मार डालते हैं और (फिर) हम ही (सब के) वाली वारिस हैं
+PREDICTED : और हमने ( हर तरह ) कुरान में से एक ख़ास ( पैदा किया
+--------------------------------------------------------------------------------
+SOURCE : But We desired to favor those who were oppressed in the land, and to make them leaders, and to make them the inheritors.
+TARGET : और हम यह चाहते थे कि उन लोगों पर उपकार करें, जो धरती में कमज़ोर पड़े थे और उन्हें नायक बनाएँ और उन्हीं को वारिस बनाएँ
+PREDICTED : और हमने उन्हें एक तख़्तों प्रकार के लिए उसमें से पैदा किया , ताकि वे सवार किए जाएँगे
+Processing epoch 14: 100% 5625/5625 [20:41<00:00,  4.53it/s, loss=3.948]
+--------------------------------------------------------------------------------
+SOURCE : It only becomes those who believe in Allah and the Last Day and establish Prayer and pay Zakah and fear none but Allah to visit and tend the mosques of Allah. These are likely to be guided aright.
+TARGET : ख़ुदा की मस्जिदों को बस सिर्फ वहीं शख़्स (जाकर) आबाद कर सकता है जो ख़ुदा और रोजे आख़िरत पर ईमान लाए और नमाज़ पढ़ा करे और ज़कात देता रहे और ख़ुदा के सिवा (और) किसी से न डरो तो अनक़रीब यही लोग हिदायत याफ्ता लोगों मे से हो जाऎंगे
+PREDICTED : और ( ऐ रसूल ) तुम लोग अपने परवरदिगार की तस्बीह करते हैं तो जो शख़्श पर ईमान लाए और नमाज़ लाने वाले और ज़कात दिया गया है और अगर वह लोग ख़ुदा ने कुफ़्र को अपना नुक़सान ही बुरा ठिकाना जहन्नुम के लिए काफी है
+--------------------------------------------------------------------------------
+SOURCE : If not, it's even better.
+TARGET : यदि नहीं, तो यह और भी बेहतर है।
+PREDICTED : - यह बात है , मुझे नहीं होगा .
+Processing epoch 15:  56% 3128/5625 [11:29<09:08,  4.55it/s, loss=4.497]
