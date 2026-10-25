@@ -21,8 +21,13 @@ import os
 import sys
 
 # Fix Windows console encoding for non-Latin scripts (e.g. Hindi)
-sys.stdout.reconfigure(encoding='utf-8')
-sys.stderr.reconfigure(encoding='utf-8')
+# why the hasattr guard ? in jupyter / colab sys.stdout is ipykernel's OutStream , which has
+# no reconfigure() , so the bare call crashed the moment this file was imported in a notebook
+# cell with "AttributeError: 'OutStream' object has no attribute 'reconfigure'" .
+if hasattr(sys.stdout , "reconfigure"):
+    sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stderr , "reconfigure"):
+    sys.stderr.reconfigure(encoding='utf-8')
 from dotenv import load_dotenv
 
 load_dotenv()
