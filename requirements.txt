@@ -6,3 +6,6 @@ datasets
 tokenizers
 tensorboard
 tqdm
+altair
+python-dotenv
+
