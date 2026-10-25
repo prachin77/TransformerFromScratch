@@ -76,7 +76,7 @@ Edit `config.py`:
 | Key | Default | Notes |
 | --- | --- | --- |
 | `batch_size` | `8` | T4 profile; use `2`–`4` on smaller GPUs |
-| `epochs` | `20` | ~1–1.5 h/epoch at 100k pairs on a T4 |
+| `epochs` | `20` | ~0.4–1.2 h/epoch at 50k pairs (AMP; depends on `seq_len` / vocab) |
 | `lr` | `1e-3` | Only the starting value; the Noam schedule sets the real LR per step |
 | `warmup_steps` | `4000` | Steps to warm the LR up before decay |
 | `seq_len` | `350` | Both source and target; longer sentences raise `ValueError` |
@@ -89,7 +89,7 @@ Edit `config.py`:
 | `experiment_name` | `runs/model` | TensorBoard log directory |
 | `rebuild_tokenizer` | `False` | `True` once to retrain the tokenizers on the current data |
 | `vocab_size` | `16000` | Vocab cap, only applied when the tokenizer is (re)built |
-| `train_samples` | `100_000` | Pairs kept from the train split; `None` for all |
+| `train_samples` | `50_000` | Pairs kept from the train split; `None` for all 538k |
 | `repetition_penalty` | `2.0` | Validation-only nudge against token loops; `0.0` to disable |
 | `use_amp` | `True` | fp16 autocast + GradScaler (T4 tensor cores); `False` for fp32 debugging |
 | `seed` | `42` | Fixed seed for the shuffled subset and the 90/10 split |
@@ -136,7 +136,19 @@ activations ≈ batch × (encoder + decoder layers) × per-layer cost
 logits ≈ batch × seq × vocab_size × 4 B
 ```
 
-Steps per epoch = `train_samples × 0.9 / batch_size`, e.g. 90,000 / 8 = **11,250 steps** for the 100k subset, or 60,500 for the full 538k.
+Steps per epoch = `train_samples × 0.9 / batch_size`:
+- 50k subset → 45,000 / 8 = **5,625 steps**
+- full 538k → 484,200 / 8 = **60,525 steps**
+
+Training time per epoch (50k subset, 45k steps' worth of samples):
+
+| Config | h/epoch | 20 epochs |
+|---|---|---|
+| fp32, seq 350, 30k vocab | 1.2–2 | 24–40 h |
+| AMP, seq 350, 30k vocab | 0.6–1.2 | 12–24 h |
+| AMP, seq 150, 16k vocab | 0.35–0.6 | **7–12 h** |
+
+VRAM does not depend on `train_samples` — the dataset lives in RAM, not VRAM (50k pairs ≈ a few hundred MB).
 
 ## Inference
 

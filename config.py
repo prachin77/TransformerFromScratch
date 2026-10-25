@@ -37,9 +37,10 @@ def get_config():
         # 16k keeps the output layer small enough for a T4 .
         "vocab_size" : 16000,
 
-        # the en-hi train split is big (lakhs of pairs) and 1 epoch on a T4 would take
-        # hours . we keep only this many pairs for now . set it to None to use everything .
-        "train_samples" : 100_000,
+        # the en-hi train split is big (538k pairs) and 1 epoch on a T4 would take hours .
+        # we keep only this many pairs for now . 50k -> ~45k train / 5,625 steps per epoch ,
+        # which is a few minutes per epoch with AMP . set it to None to use everything .
+        "train_samples" : 50_000,
 
         # only used while validating . greedy decoding keeps repeating the same frequent
         # word when the model is undertrained , so we subtract this from tokens that were
