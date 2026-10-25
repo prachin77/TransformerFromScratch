@@ -114,9 +114,35 @@ Edit `config.py`:
 - Validation runs every epoch on a batch-size-1 loader, greedily decoding 2 samples and printing source / target / prediction.
 - After every epoch the model, optimizer state, epoch, and global step are saved to `weights/t_modelXX.pt`. Resuming restores all four.
 
+## Resource requirements
+
+Estimated for the current config (`d_model=512`, `N=6`, `batch_size=8`, `seq_len=350`, AMP on, fp32 master weights):
+
+| Item | 16k vocab | 30k vocab |
+|---|---|---|
+| Weights (fp32) | 0.19 GB | 0.27 GB |
+| Gradients + Adam `m`/`v` | 0.37 GB | 0.53 GB |
+| Activations (~200 MB/sample × 8) | ~1.6 GB | ~1.6 GB |
+| Logits + cross-entropy | 0.17 GB | 0.31 GB |
+| cuBLAS/cuDNN workspace + CUDA context | ~0.6 GB | ~0.6 GB |
+| **Total incl. fragmentation** | **~3.5–4.5 GB** | **~4–5.5 GB** |
+
+Fits a 15 GB Colab T4 with ~3× headroom; `batch_size: 16` lands around 7–8 GB. Formula, so you can rescale:
+
+```
+weights = grads = params × 4 B        Adam = 2 × params × 4 B
+per layer ≈ 4·seq·d_model·4 B (Q/K/V/LN/FF) + 2·h·seq²·4 B (scores + softmax)
+activations ≈ batch × (encoder + decoder layers) × per-layer cost
+logits ≈ batch × seq × vocab_size × 4 B
+```
+
+Steps per epoch = `train_samples × 0.9 / batch_size`, e.g. 90,000 / 8 = **11,250 steps** for the 100k subset, or 60,500 for the full 538k.
+
 ## Inference
 
 `train.py` provides `greedy_decode`, which encodes the source once, then feeds the decoder one token at a time starting from `[SOS]`, appending the argmax token until `[EOS]` or `max_len`. An optional `repetition_penalty` subtracts a constant from already-generated tokens so validation output stays readable while the model is undertrained.
+
+**Beam search is not implemented** — only greedy. Use beam search (`beam=4–5`) for a final demo or BLEU measurement, where ~1–2 extra BLEU is worth the k× decode time. Don't use it for per-epoch validation: it multiplies decoding cost by the beam width and tells you nothing new about training progress.
 
 ## Known limitations
 
