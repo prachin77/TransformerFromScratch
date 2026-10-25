@@ -22,6 +22,52 @@ A from-scratch PyTorch implementation of the original encoder–decoder **Transf
 
 The model exposes `encode`, `decode`, and `project` separately so the encoder output can be reused during inference and attention can be inspected.
 
+## Model size
+
+For `d_model=512`, `N=6`, `d_ff=512`, `h=8` and a 30k word-level vocab: **71,357,744 parameters (~71.4M)**.
+
+```
+SELF-ATTENTION (per block)                     1,050,624
+  Wq   512×512 + 512 bias                        262,656
+  Wk                                             262,656
+  Wv                                             262,656
+  Wo                                             262,656
+
+FEED-FORWARD (per block)                         525,312
+  W1   512×d_ff + d_ff                           262,656
+  W2   d_ff×512 + 512                            262,656
+
+LAYER NORM (per block)                             2,048
+  one LN = γ 512 + β 512 = 1,024 ; two per block  = 2 × 1,024
+
+Encoder block = attn + FFN + 2 LN              1,577,984
+Decoder block = self-attn + cross-attn + FFN + 3 LN
+              = 1,050,624 + 1,050,624 + 525,312 + 3,072 = 2,629,632
+
+6 × encoder block                              9,467,904
+6 × decoder block                             15,777,792
+source embedding 30000×512                    15,360,000
+target embedding 30000×512                    15,360,000
+projection 512×30000 + 30000                  15,390,000
+final encoder + decoder LN                         2,048
+                                              ----------
+TOTAL                                         71,357,744
+```
+
+| Part | Params | Share |
+|---|---|---|
+| 6 encoder blocks | 9.47 M | 13.3% |
+| 6 decoder blocks | 15.78 M | 22.1% |
+| Embeddings (src + tgt) | 30.72 M | 43.0% |
+| Output projection | 15.39 M | 21.6% |
+| Final layer norms | 0.002 M | ~0% |
+
+Notes:
+- Attention and FFN together are only ~35% of the model; **65% is vocabulary** (embeddings + projection). That is why `vocab_size` dominates both parameter count and per-step cost.
+- The positional encoding is a fixed buffer, not a parameter (0 params).
+- At a 16k vocab the same layers give **49.8 M** (embeddings 16.38 M + projection 8.21 M).
+- FP32 weights = `params × 4 B` → 0.27 GB at 30k, 0.19 GB at 16k; training state (weights + grads + Adam `m`/`v`) = ×3 → 0.80 GB / 0.56 GB.
+
 ## Project structure
 
 ```
