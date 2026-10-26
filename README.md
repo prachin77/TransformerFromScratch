@@ -81,7 +81,7 @@ logs/                Reference training log (50k subset, 20 epochs)
 requirements.txt     Dependencies
 .env                 HF_TOKEN (git-ignored)
 weights/             Per-epoch checkpoints (git-ignored)
-runs/                TensorBoard logs (git-ignored)
+runs/                TensorBoard logs, one timestamped subfolder per run (git-ignored)
 ```
 
 ## Setup

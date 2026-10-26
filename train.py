@@ -19,6 +19,7 @@ from tqdm import tqdm
 from pathlib import Path
 import os
 import sys
+import time
 
 # Fix Windows console encoding for non-Latin scripts (e.g. Hindi)
 # why the hasattr guard ? in jupyter / colab sys.stdout is ipykernel's OutStream , which has
@@ -363,7 +364,21 @@ def train_model(config):
     model = get_model(config , tokenizer_src.get_vocab_size() , tokenizer_tgt.get_vocab_size()).to(device)
 
     # Tensorboard
-    writer = SummaryWriter(config["experiment_name"])
+    # old line was : writer = SummaryWriter(config["experiment_name"])
+    # problem -> every run wrote its event file into the SAME "runs/model" folder . tensorboard
+    # then loads all of them at once and draws the curves of 3 different runs on top of each
+    # other , which looks like "the new run isn't being stored" when actually it is . it can
+    # also make the newest curve appear missing if an older file is longer .
+    # now each run gets its own timestamped sub folder . tensorboard scans recursively , so
+    # "tensorboard --logdir runs" still shows every run , just as separate coloured lines .
+    run_dir = Path(config["experiment_name"]) / time.strftime("%Y%m%d-%H%M%S")
+    writer = SummaryWriter(str(run_dir))
+
+    # print the REAL absolute paths . on colab we're usually in /content/TransformerFromScratch ,
+    # so "runs/model" alone doesn't tell us what to point tensorboard at .
+    print(f"tensorboard log dir : {run_dir.resolve()}")
+    print(f"checkpoints go to   : {Path(config['model_folder']).resolve()}")
+    print(f"to view the curves : tensorboard --logdir {Path(config['experiment_name']).resolve()}")
 
     optimizer = torch.optim.Adam(
         model.parameters() , 
@@ -503,6 +518,11 @@ def train_model(config):
 
         run_validation(model , val_dataloader , tokenizer_src , tokenizer_tgt , config["seq_len"] , device , lambda msg : batch_iterator.write(msg) , global_step , writer , repetition_penalty = config.get("repetition_penalty" , 0.0))
 
+        # push whatever tensorboard has buffered out to disk now .
+        # without this the events sit in memory until the buffer fills (or the process exits
+        # cleanly) , so a colab disconnect at 99% of an epoch could lose that epoch's curve .
+        writer.flush()
+
         # save the model and the end of every epoch 
         model_filename = get_weights_file_path(config , f"{epoch:02d}")
         torch.save({
@@ -511,6 +531,12 @@ def train_model(config):
             "optimizer_state_dict" : optimizer.state_dict(),
             "global_step" : global_step
         } , model_filename)
+        # one line per epoch so we can see the file actually landed (and where)
+        print(f"saved checkpoint : {Path(model_filename).resolve()}")
+
+    # close the event file properly so the last scalars are flushed and tensorboard doesn't
+    # leave a half written file behind
+    writer.close()
 
 if __name__ == "__main__":
     # use this if 
