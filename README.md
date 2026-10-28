@@ -2,7 +2,7 @@
 
 A from-scratch PyTorch implementation of the original encoder–decoder **Transformer** ("Attention Is All You Need") trained for **English → Hindi** translation. No prebuilt transformer layers — attention, positional encoding, layer norm, residual blocks, and the training loop are all implemented directly.
 
-> **Status / notice:** the reference run is **20 epochs on a 50k-pair subset** (~6.9 h on a single T4). Full validation — BLEU/chrF over the whole validation split — was **not** run because of compute limits; validation is limited to 2 sample translations per epoch. This is a learning/from-scratch build, not a tuned translation system: **results would improve substantially with the full 538k pairs, more epochs, and a BPE tokenizer.** Raw log: [`logs/train_50k_t4.log`](logs/train_50k_t4.log).
+> **Status / notice:** the reference run is **20 epochs on a 50k-pair subset** (~6.9 h on a single T4). Full validation — BLEU/chrF over the whole validation split — was **not** run because of compute limits; validation is limited to 2 sample translations per epoch. This is a learning/from-scratch build, not a tuned translation system: **results would improve substantially with the full 1.66M pairs, more epochs, and a BPE tokenizer.** Raw log: [`logs/train_50k_t4.log`](logs/train_50k_t4.log).
 
 ---
 
@@ -138,14 +138,14 @@ Edit `config.py`:
 | `experiment_name` | `runs/model` | TensorBoard log directory |
 | `rebuild_tokenizer` | `False` | `True` once to retrain the tokenizers on the current data |
 | `vocab_size` | `16000` | Vocab cap, only applied when the tokenizer is (re)built |
-| `train_samples` | `50_000` | Pairs kept from the train split; `None` for all 538k |
+| `train_samples` | `50_000` | Pairs kept from the train split; `None` for all 1.66M |
 | `repetition_penalty` | `2.0` | Validation-only nudge against token loops; `0.0` to disable |
 | `use_amp` | `True` | fp16 autocast + GradScaler (T4 tensor cores); `False` for fp32 debugging |
 | `seed` | `42` | Fixed seed for the shuffled subset and the 90/10 split |
 
 ## Data pipeline
 
-- Dataset: `Helsinki-NLP/opus-100`, config `en-hi`, `train` split, shuffled with a fixed seed and then capped at `train_samples`.
+- Dataset: [`cfilt/iitb-english-hindi`](https://huggingface.co/datasets/cfilt/iitb-english-hindi) — the IIT Bombay English–Hindi parallel corpus, `train` split (1,659,083 pairs), shuffled with a fixed seed and then capped at `train_samples`. Licence: **CC BY-NC 4.0** (non-commercial). It replaced `Helsinki-NLP/opus-100`, whose en–hi split is mostly subtitles and GNOME UI strings; the schema is identical (`translation` dict with `en`/`hi`), so `BilingualDataset` is unchanged.
 - Split 90/10 into train/validation.
 - Tokenizers use `WordLevel` + `Whitespace` pre-tokenizer, `min_frequency=2`, `vocab_size` cap, and special tokens `[UNK] [PAD] [SOS] [EOS]`. Cached JSONs are reused unless `rebuild_tokenizer` is enabled.
 - Each sample is padded to `seq_len`:
@@ -187,7 +187,7 @@ logits ≈ batch × seq × vocab_size × 4 B
 
 Steps per epoch = `train_samples × 0.9 / batch_size`:
 - 50k subset → 45,000 / 8 = **5,625 steps**
-- full 538k → 484,200 / 8 = **60,525 steps**
+- full 1.66M → 1,493,174 / 8 = **186,647 steps** (~33× the 50k run)
 
 Training time per epoch (50k subset, 45k samples):
 
@@ -220,7 +220,7 @@ Nothing below is implemented — this is the "can be added" list, roughly in cos
 
 ## Known limitations
 
-- Trained on **50k of 538k pairs for 20 epochs**; the loss is still noisy (3.86–5.53) and sentences are often unrelated to the source. More data and epochs are the main lever.
+- Trained on **50k of 1.66M pairs for 20 epochs**; the loss is still noisy (3.86–5.53) and sentences are often unrelated to the source. More data and epochs are the main lever.
 - **No BLEU/chrF.** Validation is 2 decoded samples per epoch, so there is no held-out quality number.
 - Checkpoints saved before the LayerNorm change have `(1,)`-shaped `gamma`/`beta` and will not load into the current model.
 - `seq_len` pads every sample to the full length, so short sentences still cost `seq_len` steps.
@@ -228,3 +228,5 @@ Nothing below is implemented — this is the "can be added" list, roughly in cos
 ## License
 
 MIT — see `LICENSE`.
+
+The training data ([`cfilt/iitb-english-hindi`](https://huggingface.co/datasets/cfilt/iitb-english-hindi)) is **CC BY-NC 4.0** — non-commercial use only, and it requires attribution to Kunchukuttan, Mehta & Bhattacharyya, *The IIT Bombay English-Hindi Parallel Corpus*, LREC 2018. The MIT licence above covers this code only, not the data or any weights trained on it.

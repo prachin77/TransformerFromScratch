@@ -202,9 +202,25 @@ def get_ds(config):
     # model can only learn "which hindi word is most common" and keeps printing it .
     # so we now take the real train split and cap it with "train_samples" in config.py
     # so the first run on a T4 doesn't take hours . raise the cap or set it to None later .
+    # old version , kept only so the history is readable :
+    # ds_raw = load_dataset(
+    #     "Helsinki-NLP/opus-100",
+    #     f'{config["lang_src"]}-{config["lang_tgt"]}',
+    #     split = "train",
+    #     token = hf_token
+    # )
+    #
+    # why changed again ?
+    # opus-100 en-hi is mostly scraped subtitle / GNOME string dumps , so the 50k subset we
+    # trained on was full of UI labels ("Full Width", "Rebase") and movie lines . that is why
+    # the samples printed during validation were nonsense even though the loss was falling .
+    # cfilt/iitb-english-hindi is the IIT Bombay parallel corpus (1.66M pairs , proper news /
+    # govt / wiki sentences) and it has the SAME schema , one "translation" dict with "en"
+    # and "hi" keys , so BilingualDataset needs no change at all .
+    # the config name "en-hi" is gone because this repo only ships the one direction .
+    # licence is CC BY-NC 4.0 (non commercial) , see the README .
     ds_raw = load_dataset(
-        "Helsinki-NLP/opus-100",
-        f'{config["lang_src"]}-{config["lang_tgt"]}',
+        "cfilt/iitb-english-hindi",
         split = "train",
         token = hf_token
     )
@@ -216,10 +232,10 @@ def get_ds(config):
         # ds_raw = ds_raw.select(range(min(config["train_samples"] , len(ds_raw))))
         #
         # why shuffle first ?
-        # opus-100 is not shuffled , so rows 0..N come from whatever corpus / domain sits
-        # at the top of the file . taking a prefix means our 100k pairs AND the tokenizer
-        # vocab are both biased towards that domain , and that bias then shows up as
-        # weird translations later . shuffling first gives us a random slice of the whole
+        # neither opus-100 nor iitb is shuffled , so rows 0..N come from whatever corpus /
+        # domain sits at the top of the file . taking a prefix means our 50k pairs AND the
+        # tokenizer vocab are both biased towards that domain , and that bias then shows up
+        # as weird translations later . shuffling first gives us a random slice of the whole
         # file instead of a slice of the first domain .
         # seed = 42 keeps it reproducible , every run picks the exact same rows .
         # this only permutes indices in memory , it doesn't download anything extra .
